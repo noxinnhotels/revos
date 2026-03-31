@@ -446,49 +446,73 @@ function App() {
     setElektraSyncing(true);
     setElektraStatus('testing');
     try {
-      // Elektra Reporting API — JWT ile kimlik doğrulama
-      const baseUrl = 'https://app.elektraweb.com/api';
-      const headers = {
-        'Authorization': `Bearer ${elektraToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      };
-
-      // Aylık istatistik endpoint (Elektra standart rapor)
+      const workerUrl = localStorage.getItem('rv_elektra_worker') || '';
       const year = new Date().getFullYear();
-      const res = await fetch(`${baseUrl}/reports/monthly-stats?year=${year}${elektraHotelId ? `&hotelId=${elektraHotelId}` : ''}`, { headers });
 
-      if (!res.ok) {
-        if (res.status === 401) setElektraStatus('error_auth');
-        else setElektraStatus('error');
-        setElektraSyncing(false);
-        return;
+      let res, data;
+
+      if (workerUrl) {
+        // Cloudflare Worker proxy üzerinden
+        const q = new URLSearchParams({
+          action: 'monthly_stats',
+          token: elektraToken,
+          year,
+          ...(elektraHotelId ? { hotel: elektraHotelId } : {}),
+        });
+        res = await fetch(`${workerUrl}?${q}`);
+        data = await res.json();
+        if (!res.ok || !data.ok) {
+          setElektraStatus(res.status === 401 ? 'error_auth' : 'error');
+          setElektraSyncing(false);
+          return;
+        }
+        data = data.data; // Worker { ok, endpoint, data } döndürür
+      } else {
+        // Worker yoksa direkt dene (CORS hatası verebilir)
+        const isJWT = elektraToken.startsWith('eyJ');
+        const authHeader = isJWT
+          ? { 'Authorization': `Bearer ${elektraToken}` }
+          : { 'X-Api-Key': elektraToken };
+        res = await fetch(
+          `https://app.elektraweb.com/api/v1/reports/monthly-stats?year=${year}${elektraHotelId ? `&hotelId=${elektraHotelId}` : ''}`,
+          { headers: { 'Content-Type': 'application/json', ...authHeader } }
+        );
+        if (!res.ok) {
+          setElektraStatus(res.status === 401 ? 'error_auth' : 'cors');
+          setElektraSyncing(false);
+          return;
+        }
+        data = await res.json();
       }
 
-      const data = await res.json();
-      // Elektra'dan gelen veriyi RevenueOS formatına çevir
-      if (data && (data.months || data.data)) {
-        const rows = (data.months || data.data);
+      // Elektra verisini RevenueOS formatına çevir
+      const rows = data?.months || data?.data || data?.result || [];
+      if (rows.length > 0) {
         const mapped = MS.map((m, i) => {
-          const row = rows.find(r => (r.month === i + 1) || (r.monthIndex === i));
+          const row = rows.find(r =>
+            r.month === i + 1 ||
+            r.monthIndex === i ||
+            r.month_index === i
+          );
           const existing = monthly[i];
           if (!row) return existing;
           return {
             ...existing,
             m,
-            g: row.revenue || row.actualRevenue || row.ciro || existing.g,
-            o: row.occupancy || row.occ || existing.o,
-            a: row.adr || row.averageDailyRate || existing.a,
+            g:   row.revenue         ?? row.actualRevenue  ?? row.ciro        ?? row.total_revenue ?? existing.g,
+            o:   row.occupancy        ?? row.occ            ?? row.occupancyRate ?? row.occupancy_rate ?? existing.o,
+            a:   row.adr              ?? row.averageDailyRate ?? row.average_daily_rate ?? existing.a,
+            py:  row.previousRevenue  ?? row.prevRevenue    ?? row.last_year_revenue ?? existing.py,
           };
         });
         setMonthlySync(mapped);
         setElektraStatus('ok');
       } else {
-        setElektraStatus('error');
+        // Veri boş geldi — token çalışıyor ama veri yok
+        setElektraStatus('empty');
       }
     } catch (e) {
       console.error('Elektra sync error:', e);
-      // CORS hatası olabilir — Cloudflare Worker proxy gerekebilir
       setElektraStatus('cors');
     }
     setElektraSyncing(false);
@@ -829,6 +853,11 @@ function App() {
                       ✅ Veriler başarıyla çekildi. Dashboard güncellendi.
                     </div>
                   )}
+                  {elektraStatus === 'empty' && (
+                    <div className="notif notif-warn" style={{ marginBottom: 10 }}>
+                      ⚠ Bağlantı başarılı ama veri gelmedi. Elektra'da yıl verisi olduğunu kontrol edin.
+                    </div>
+                  )}
                   {elektraStatus === 'error' && (
                     <div className="notif notif-error" style={{ marginBottom: 10 }}>
                       ❌ Veri çekme hatası. Token veya Otel ID kontrol edin.
@@ -836,13 +865,25 @@ function App() {
                   )}
                   {elektraStatus === 'error_auth' && (
                     <div className="notif notif-error" style={{ marginBottom: 10 }}>
-                      🔒 Kimlik doğrulama hatası. Token'ınız geçersiz veya süresi dolmuş.
+                      🔒 Kimlik doğrulama hatası. Token geçersiz veya süresi dolmuş.
                     </div>
                   )}
                   {elektraStatus === 'cors' && (
-                    <div className="notif notif-warn" style={{ marginBottom: 10 }}>
-                      ⚠ CORS hatası — Elektra API'sine tarayıcıdan direkt erişilemiyor.
-                      Cloudflare Worker proxy gerekiyor. Destek için iletişime geçin.
+                    <div>
+                      <div className="notif notif-warn" style={{ marginBottom: 8 }}>
+                        ⚠ CORS hatası — Worker URL'si girilmeli.
+                      </div>
+                      <div className="field">
+                        <label>Cloudflare Worker URL</label>
+                        <input className="inp"
+                          defaultValue={localStorage.getItem('rv_elektra_worker') || ''}
+                          onChange={e => localStorage.setItem('rv_elektra_worker', e.target.value.trim())}
+                          placeholder="https://elektra-proxy.KULLANICI.workers.dev"
+                          style={{ fontSize: 11, fontFamily: 'var(--mono)' }} />
+                        <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4, lineHeight: 1.6 }}>
+                          Ayarlar indirilebilir <code style={{ fontFamily: 'var(--mono)', background: 'var(--bg2)', padding: '1px 4px', borderRadius: 3 }}>elektra-worker.js</code> dosyasını Cloudflare Workers'a yükleyin.
+                        </div>
+                      </div>
                     </div>
                   )}
 
