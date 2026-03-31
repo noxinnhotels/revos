@@ -344,6 +344,15 @@ function App() {
   const [groqSaved, setGroqSaved] = useState(false);
   const [groqKeyInput, setGroqKeyInput] = useState('');
   const [dbSync, setDbSync] = useState(false);
+
+  // Elektra PMS
+  const [elektraToken, setElektraToken] = useState(() => localStorage.getItem('rv_elektra_token') || '');
+  const [elektraHotelId, setElektraHotelId] = useState(() => localStorage.getItem('rv_elektra_hotel') || '');
+  const [elektraReady, setElektraReady] = useState(() => !!localStorage.getItem('rv_elektra_token'));
+  const [elektraInput, setElektraInput] = useState('');
+  const [elektraHotelInput, setElektraHotelInput] = useState('');
+  const [elektraStatus, setElektraStatus] = useState('idle'); // idle | testing | ok | error
+  const [elektraSyncing, setElektraSyncing] = useState(false);
   const [users, setUsers] = useState(() => { try { const s = localStorage.getItem('rv_users'); if (s) { const p = JSON.parse(s); if (p && p.length > 0) return p; } } catch (e) {} return USERS; });
 
   // ── DB FONKSİYONLARI ── (değişmedi)
@@ -407,6 +416,84 @@ function App() {
     try { await sb.from('app_settings').delete().eq('key', 'groq_api_key'); setGroqKey(''); setGroqSaved(false); } catch (e) {}
   };
 
+  // ── ELEKTRA PMS FONKSİYONLARI ──
+  const saveElektraConfig = () => {
+    const token = elektraInput.trim();
+    const hotel = elektraHotelInput.trim();
+    if (!token) return;
+    localStorage.setItem('rv_elektra_token', token);
+    if (hotel) localStorage.setItem('rv_elektra_hotel', hotel);
+    setElektraToken(token);
+    setElektraHotelId(hotel);
+    setElektraReady(true);
+    setElektraStatus('idle');
+  };
+
+  const removeElektraConfig = () => {
+    localStorage.removeItem('rv_elektra_token');
+    localStorage.removeItem('rv_elektra_hotel');
+    setElektraToken('');
+    setElektraHotelId('');
+    setElektraReady(false);
+    setElektraInput('');
+    setElektraHotelInput('');
+    setElektraStatus('idle');
+  };
+
+  // Elektra'dan doluluk + ciro verisi çek ve RevenueOS'a yaz
+  const syncFromElektra = async () => {
+    if (!elektraToken) return;
+    setElektraSyncing(true);
+    setElektraStatus('testing');
+    try {
+      // Elektra Reporting API — JWT ile kimlik doğrulama
+      const baseUrl = 'https://app.elektraweb.com/api';
+      const headers = {
+        'Authorization': `Bearer ${elektraToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+
+      // Aylık istatistik endpoint (Elektra standart rapor)
+      const year = new Date().getFullYear();
+      const res = await fetch(`${baseUrl}/reports/monthly-stats?year=${year}${elektraHotelId ? `&hotelId=${elektraHotelId}` : ''}`, { headers });
+
+      if (!res.ok) {
+        if (res.status === 401) setElektraStatus('error_auth');
+        else setElektraStatus('error');
+        setElektraSyncing(false);
+        return;
+      }
+
+      const data = await res.json();
+      // Elektra'dan gelen veriyi RevenueOS formatına çevir
+      if (data && (data.months || data.data)) {
+        const rows = (data.months || data.data);
+        const mapped = MS.map((m, i) => {
+          const row = rows.find(r => (r.month === i + 1) || (r.monthIndex === i));
+          const existing = monthly[i];
+          if (!row) return existing;
+          return {
+            ...existing,
+            m,
+            g: row.revenue || row.actualRevenue || row.ciro || existing.g,
+            o: row.occupancy || row.occ || existing.o,
+            a: row.adr || row.averageDailyRate || existing.a,
+          };
+        });
+        setMonthlySync(mapped);
+        setElektraStatus('ok');
+      } else {
+        setElektraStatus('error');
+      }
+    } catch (e) {
+      console.error('Elektra sync error:', e);
+      // CORS hatası olabilir — Cloudflare Worker proxy gerekebilir
+      setElektraStatus('cors');
+    }
+    setElektraSyncing(false);
+  };
+
   const saveToDB = async (opts = {}) => {
     const sb = getSupabase(); if (!sb) return;
     setDbSync(true);
@@ -447,6 +534,16 @@ function App() {
 
   const initialLoadDone = React.useRef(false);
   useEffect(() => { if (sbReady && !initialLoadDone.current) { initialLoadDone.current = true; loadFromDB(); loadSettings(); loadUsers(); } }, [sbReady]);
+
+  // Elektra: kullanıcı giriş yapınca token varsa otomatik sync teklif et (sessiz — hata göstermez)
+  const elektraAutoSyncDone = React.useRef(false);
+  useEffect(() => {
+    if (user && elektraReady && !elektraAutoSyncDone.current) {
+      elektraAutoSyncDone.current = true;
+      // Sessiz sync — hata durumunda UI'ı bozmaz
+      syncFromElektra().catch(() => {});
+    }
+  }, [user, elektraReady]);
 
   const setMonthlySync = useCallback((v) => { setMonthly(v); if (sbReady) saveToDB({ monthly: v }); }, [sbReady]);
   const setAcSync = useCallback((v) => { setAc(v); if (sbReady) saveToDB({ ac: v }); }, [sbReady]);
@@ -696,7 +793,121 @@ function App() {
               )}
             </div>
 
-            <button className="btn btn-full" style={{ marginTop: 4 }} onClick={() => setSettingsModal(false)}>Kapat</button>
+
+            {/* ── ELEKTRA WEB PMS ── */}
+            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginTop: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 28, height: 28, background: 'rgba(245,166,35,0.15)', border: '1px solid rgba(245,166,35,0.3)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>⚡</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>Elektra Web PMS</div>
+                    <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Doluluk · Ciro · ADR · Otomatik Sync</div>
+                  </div>
+                </div>
+                <span className={`badge ${elektraReady ? 'badge-green' : 'badge-red'}`}>
+                  {elektraReady ? 'Bağlı' : 'Bağlı Değil'}
+                </span>
+              </div>
+
+              {elektraReady ? (
+                <div>
+                  {/* Bağlı durumu */}
+                  <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 16 }}>⚡</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--teal)' }}>Token aktif</div>
+                      <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 2 }}>
+                        {elektraToken.substring(0, 20)}•••
+                        {elektraHotelId && <span style={{ marginLeft: 8, color: 'var(--text3)' }}>Otel ID: {elektraHotelId}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sync durumu */}
+                  {elektraStatus === 'ok' && (
+                    <div className="notif notif-success" style={{ marginBottom: 10 }}>
+                      ✅ Veriler başarıyla çekildi. Dashboard güncellendi.
+                    </div>
+                  )}
+                  {elektraStatus === 'error' && (
+                    <div className="notif notif-error" style={{ marginBottom: 10 }}>
+                      ❌ Veri çekme hatası. Token veya Otel ID kontrol edin.
+                    </div>
+                  )}
+                  {elektraStatus === 'error_auth' && (
+                    <div className="notif notif-error" style={{ marginBottom: 10 }}>
+                      🔒 Kimlik doğrulama hatası. Token'ınız geçersiz veya süresi dolmuş.
+                    </div>
+                  )}
+                  {elektraStatus === 'cors' && (
+                    <div className="notif notif-warn" style={{ marginBottom: 10 }}>
+                      ⚠ CORS hatası — Elektra API'sine tarayıcıdan direkt erişilemiyor.
+                      Cloudflare Worker proxy gerekiyor. Destek için iletişime geçin.
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-sm btn-primary" style={{ flex: 2 }}
+                      onClick={syncFromElektra} disabled={elektraSyncing}>
+                      {elektraSyncing ? '⏳ Senkronize ediliyor…' : '🔄 Veriyi Güncelle'}
+                    </button>
+                    <button className="btn btn-sm btn-danger" style={{ flex: 1 }}
+                      onClick={removeElektraConfig}>
+                      Bağlantıyı Kes
+                    </button>
+                  </div>
+
+                  <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.06em' }}>Otomatik Sync</div>
+                    <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.7 }}>
+                      Dashboard her açıldığında otomatik güncel veri çekilmez.
+                      "Veriyi Güncelle" butonuna basınca anlık sync yapılır.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.7, marginBottom: 12, padding: '8px 10px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>📋 Nasıl alırsınız?</div>
+                    <div>1. Elektraweb'i arayın: <span style={{ fontFamily: 'var(--mono)', color: 'var(--gold)' }}>0850 777 0444</span></div>
+                    <div>2. "API entegrasyonu için JWT token almak istiyorum" deyin</div>
+                    <div>3. Token ve Otel ID'nizi buraya girin</div>
+                  </div>
+
+                  <div className="field">
+                    <label>JWT Token <span style={{ color: 'var(--red)', fontWeight: 600 }}>*</span></label>
+                    <input
+                      className="inp"
+                      type="password"
+                      value={elektraInput}
+                      onChange={e => setElektraInput(e.target.value)}
+                      placeholder="eyJhbGci… (Elektraweb'den alınan token)"
+                      style={{ fontSize: 11, fontFamily: 'var(--mono)' }}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Otel ID <span style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 400 }}>(isteğe bağlı — çok otelli hesaplar için)</span></label>
+                    <input
+                      className="inp"
+                      type="text"
+                      value={elektraHotelInput}
+                      onChange={e => setElektraHotelInput(e.target.value)}
+                      placeholder="örn: 1234"
+                      style={{ fontSize: 12, fontFamily: 'var(--mono)' }}
+                    />
+                  </div>
+
+                  <button
+                    className="btn btn-primary btn-full"
+                    onClick={saveElektraConfig}
+                    disabled={!elektraInput.trim()}>
+                    Kaydet & Bağlan
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button className="btn btn-full" style={{ marginTop: 8 }} onClick={() => setSettingsModal(false)}>Kapat</button>
           </div>
         </div>
       )}
