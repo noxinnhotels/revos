@@ -1,0 +1,21 @@
+{
+  "name": "RevenueOS",
+  "short_name": "RevenueOS",
+  "description": "Noxinn Deluxe Hotel — Satış & Revenue Yönetimi",
+  "start_url": "/revos/",
+  "scope": "/revos/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#080c14",
+  "theme_color": "#f0b429",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='80' fill='%23080c14'/><text x='50%25' y='55%25' text-anchor='middle' dominant-baseline='middle' font-size='300' font-family='system-ui'>📊</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "tr"
+}
