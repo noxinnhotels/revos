@@ -489,26 +489,21 @@ function App() {
       const rows = data?.months || data?.data || data?.result || [];
       if (rows.length > 0) {
         const mapped = MS.map((m, i) => {
-          const row = rows.find(r =>
-            r.month === i + 1 ||
-            r.monthIndex === i ||
-            r.month_index === i
-          );
+          const row = rows.find(r => r.month === i + 1 || r.monthIndex === i);
           const existing = monthly[i];
           if (!row) return existing;
           return {
             ...existing,
             m,
-            g:   row.revenue         ?? row.actualRevenue  ?? row.ciro        ?? row.total_revenue ?? existing.g,
-            o:   row.occupancy        ?? row.occ            ?? row.occupancyRate ?? row.occupancy_rate ?? existing.o,
-            a:   row.adr              ?? row.averageDailyRate ?? row.average_daily_rate ?? existing.a,
-            py:  row.previousRevenue  ?? row.prevRevenue    ?? row.last_year_revenue ?? existing.py,
+            // null gelirse mevcut değeri koru (örn. ciro gelmiyorsa manuel değeri silme)
+            g: row.revenue   != null ? row.revenue   : existing.g,
+            o: row.occupancy != null ? row.occupancy : existing.o,
+            a: row.adr       != null ? row.adr       : existing.a,
           };
         });
         setMonthlySync(mapped);
         setElektraStatus('ok');
       } else {
-        // Veri boş geldi — token çalışıyor ama veri yok
         setElektraStatus('empty');
       }
     } catch (e) {
