@@ -21,7 +21,12 @@ function Dashboard({user,monthly,simOcc,setSimOcc,simAdr,setSimAdr,saveSimToDB,
   const [elektraYear, setElektraYear] = useState(curYear);
   const [elektraMonth, setElektraMonth] = useState(null); // null = yıllık görünüm
   const [elektraDetail, setElektraDetail] = useState(null); // seçili ay detayı
-  const [elektraYearData, setElektraYearData] = useState({}); // {year: months[]}
+  const [elektraYearData, setElektraYearData] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rv_elektra_year_data');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  }); // {year: months[]}
   const [elektraLoading, setElektraLoading] = useState(false);
 
   const MFull = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
@@ -37,7 +42,11 @@ function Dashboard({user,monthly,simOcc,setSimOcc,simAdr,setSimAdr,saveSimToDB,
       const res = await fetch(`${workerUrl}?${q}`);
       const data = await res.json();
       if (data.ok && data.months) {
-        setElektraYearData(prev => ({ ...prev, [year]: data.months }));
+        setElektraYearData(prev => {
+          const updated = { ...prev, [year]: data.months };
+          try { localStorage.setItem('rv_elektra_year_data', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
       }
     } catch(e) {}
     setElektraLoading(false);
@@ -45,6 +54,13 @@ function Dashboard({user,monthly,simOcc,setSimOcc,simAdr,setSimAdr,saveSimToDB,
   };
 
   const elektraMonths = elektraYearData[elektraYear] || [];
+
+  // Elektra bağlıysa ve cache'de veri yoksa otomatik yükle
+  React.useEffect(() => {
+    if (elektraReady && !elektraYearData[elektraYear] && !elektraLoading) {
+      loadElektraYear(elektraYear);
+    }
+  }, [elektraReady, elektraYear]);
 
   const sezonGun = React.useMemo(()=>{
     if(!sezonAcilis||!sezonKapanis) return 365;
@@ -185,7 +201,16 @@ function Dashboard({user,monthly,simOcc,setSimOcc,simAdr,setSimAdr,saveSimToDB,
             </div>
 
             <button className="btn bg" style={{fontSize:10,padding:'3px 10px',marginLeft:'auto'}}
-              onClick={()=>loadElektraYear(elektraYear)}
+              onClick={()=>{
+                // Cache'i temizle ve yeniden çek
+                setElektraYearData(prev => {
+                  const updated = {...prev};
+                  delete updated[elektraYear];
+                  try { localStorage.setItem('rv_elektra_year_data', JSON.stringify(updated)); } catch {}
+                  return updated;
+                });
+                setTimeout(() => loadElektraYear(elektraYear), 50);
+              }}
               disabled={elektraLoading}>
               🔄 Yenile
             </button>
