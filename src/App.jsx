@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { SUPABASE_URL, SUPABASE_KEY } from './config';
+import { SUPABASE_URL, SUPABASE_KEY, ELEKTRA_WORKER_URL } from './config';
 import { THEMES, applyTheme } from './data/themes';
 import { USERS, MS, MF, DEFC, DEFM, RI, ROLES, COLORS, PERMS, DEF_PERMS } from './data/constants';
 import { fmt, fmtK } from './utils/format';
@@ -349,8 +349,7 @@ function App() {
   const [elektraToken, setElektraToken] = useState(() => localStorage.getItem('rv_elektra_token') || '');
   const [elektraHotelId, setElektraHotelId] = useState(() => localStorage.getItem('rv_elektra_hotel') || '');
   // Elektra Worker URL — ayarlara girilmişse onu kullan, yoksa varsayılan
-  const ELEKTRA_WORKER_DEFAULT = 'https://elektra-proxy.noxinn-presentation.workers.dev';
-  const getElektraWorkerUrl = () => localStorage.getItem('rv_elektra_worker') || ELEKTRA_WORKER_DEFAULT;
+  const getElektraWorkerUrl = () => localStorage.getItem('rv_elektra_worker') || ELEKTRA_WORKER_URL || '';
 
   const [elektraReady, setElektraReady] = useState(() => true); // Worker her zaman hazır
   const [elektraInput, setElektraInput] = useState('');
@@ -383,18 +382,22 @@ function App() {
         const gk = data.find(r => r.key === 'groq_api_key'); if (gk) { setGroqKey(gk.value); setGroqSaved(true); }
         const occ = data.find(r => r.key === 'sim_occ'); if (occ) setSimOcc(+occ.value);
         const adr = data.find(r => r.key === 'sim_adr'); if (adr) setSimAdr(+adr.value);
-        // Elektra ayarları — token Supabase'de saklanmaz, sadece Worker URL kaydedilir
+        // Elektra ayarları
+        const et = data.find(r => r.key === 'elektra_token');
         const ew = data.find(r => r.key === 'elektra_worker');
         const eh = data.find(r => r.key === 'elektra_hotel');
+        if (et) {
+          localStorage.setItem('rv_elektra_token', et.value);
+          setElektraToken(et.value);
+        }
         if (ew) {
           localStorage.setItem('rv_elektra_worker', ew.value);
-          // Worker URL varsa bağlı say
-          setElektraReady(true);
         }
         if (eh) {
           localStorage.setItem('rv_elektra_hotel', eh.value);
           setElektraHotelId(eh.value);
         }
+        if (et || ew) setElektraReady(true);
       }
     } catch (e) { console.error('Settings load error:', e); }
   };
@@ -446,15 +449,16 @@ function App() {
     setElektraHotelId(hotel);
     setElektraReady(true);
     setElektraStatus('idle');
-    // Supabase'e kaydet — token hariç (güvenlik), sadece worker URL ve hotel ID
+    // Supabase'e kaydet
     if (sbReady) {
       const sb = getSupabase();
       if (sb) {
         const rows = [
+          { key: 'elektra_token', value: token },
           ...(hotel ? [{ key: 'elektra_hotel', value: hotel }] : []),
           ...(worker ? [{ key: 'elektra_worker', value: worker }] : []),
         ];
-        if (rows.length) try { await sb.from('app_settings').upsert(rows, { onConflict: 'key' }); } catch (e) { console.error(e); }
+        try { await sb.from('app_settings').upsert(rows, { onConflict: 'key' }); } catch (e) { console.error(e); }
       }
     }
   };
@@ -473,7 +477,7 @@ function App() {
       const sb = getSupabase();
       if (sb) {
         try {
-          await sb.from('app_settings').delete().in('key', ['elektra_hotel','elektra_worker']);
+          await sb.from('app_settings').delete().in('key', ['elektra_token','elektra_hotel','elektra_worker']);
         } catch (e) {}
       }
     }
