@@ -370,7 +370,7 @@ function App() {
         sb.from('agencies').select('*,agency_monthly(month_index,target)')
       ]);
       if (mData && mData.length > 0) setMonthly(mData.map(r => ({ m: MS[r.month_index], g: r.actual || null, h: r.target, o: r.occ_target || null, a: r.adr_target || null })));
-      if (aData && aData.length > 0) setAc(aData.map(r => ({ id: r.id, ad: r.name, tip: r.type, kom: r.commission, hedef: r.annual_target, ciro: r.actual_revenue || 0, ind: r.discount || 0, ay: Array(12).fill(0).map((_, i) => { const m = r.agency_monthly?.find(x => x.month_index === i); return m ? m.target : Math.round(r.annual_target / 12); }) })));
+      if (aData && aData.length > 0) setAc(aData.map(r => ({ id: r.id, ad: r.name, tip: r.type, kom: r.commission, hedef: r.annual_target, ciro: r.actual_revenue || 0, ind: r.discount || 0, pp: r.pp_eur || null, adr: r.adr_eur || null, elektraId: r.elektra_id || null, ay: Array(12).fill(0).map((_, i) => { const m = r.agency_monthly?.find(x => x.month_index === i); return m ? m.target : Math.round(r.annual_target / 12); }) })));
     } catch (e) { console.error('DB load error:', e); }
     setDbSync(false);
   };
