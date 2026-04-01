@@ -485,11 +485,11 @@ function App() {
 
   // Elektra'dan doluluk + ciro verisi çek ve RevenueOS'a yaz
   const syncFromElektra = async () => {
-    if (!elektraToken) return;
+    const workerUrl = getElektraWorkerUrl();
+    if (!workerUrl) return; // Worker URL yoksa çıkış
     setElektraSyncing(true);
     setElektraStatus('testing');
     try {
-      const workerUrl = getElektraWorkerUrl();
       const year = new Date().getFullYear();
 
       let res, data;
@@ -583,12 +583,12 @@ function App() {
   // Elektra: kullanıcı giriş yapınca token varsa otomatik sync teklif et (sessiz — hata göstermez)
   const elektraAutoSyncDone = React.useRef(false);
   useEffect(() => {
-    if (user && elektraReady && !elektraAutoSyncDone.current) {
+    const workerUrl = getElektraWorkerUrl();
+    if (user && workerUrl && !elektraAutoSyncDone.current) {
       elektraAutoSyncDone.current = true;
-      // Sessiz sync — hata durumunda UI'ı bozmaz
       syncFromElektra().catch(() => {});
     }
-  }, [user, elektraReady]);
+  }, [user]);
 
   const setMonthlySync = useCallback((v) => { setMonthly(v); if (sbReady) saveToDB({ monthly: v }); }, [sbReady]);
   const setAcSync = useCallback((v) => { setAc(v); if (sbReady) saveToDB({ ac: v }); }, [sbReady]);
