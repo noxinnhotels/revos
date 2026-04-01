@@ -357,6 +357,7 @@ function App() {
   const [elektraStatus, setElektraStatus] = useState('idle'); // idle | testing | ok | error
   const [elektraSyncing, setElektraSyncing] = useState(false);
   const [elektraLastSync, setElektraLastSync] = useState(() => localStorage.getItem('rv_elektra_last_sync') || '');
+  const [elektraMonthsCache, setElektraMonthsCache] = useState({}); // {year: months[]} — sync sonrası güncellenir
   const [users, setUsers] = useState(() => { try { const s = localStorage.getItem('rv_users'); if (s) { const p = JSON.parse(s); if (p && p.length > 0) return p; } } catch (e) {} return USERS; });
 
   // ── DB FONKSİYONLARI ── (değişmedi)
@@ -527,6 +528,15 @@ function App() {
         const now = new Date().toLocaleString('tr-TR');
         setElektraLastSync(now);
         localStorage.setItem('rv_elektra_last_sync', now);
+        // Dashboard'u güncelle
+        const curYear = new Date().getFullYear();
+        const workerRows = data?.months || [];
+        setElektraMonthsCache(prev => ({ ...prev, [curYear]: workerRows }));
+        try {
+          const stored = JSON.parse(localStorage.getItem('rv_elektra_year_data') || '{}');
+          stored[curYear] = workerRows;
+          localStorage.setItem('rv_elektra_year_data', JSON.stringify(stored));
+        } catch {}
         setElektraStatus('ok');
       } else {
         setElektraStatus('empty');
@@ -741,7 +751,7 @@ function App() {
 
         {/* Content */}
         <div className="page-content">
-          {tab === 'dash' && <Dashboard user={user} monthly={monthly} simOcc={simOcc} setSimOcc={setSimOccSync} simAdr={simAdr} setSimAdr={setSimAdrSync} saveSimToDB={saveSimToDB} elektraReady={elektraReady} elektraStatus={elektraStatus} elektraLastSync={elektraLastSync} elektraSyncing={elektraSyncing} onElektraSync={syncFromElektra} elektraWorkerUrl={getElektraWorkerUrl()} />}
+          {tab === 'dash' && <Dashboard user={user} monthly={monthly} simOcc={simOcc} setSimOcc={setSimOccSync} simAdr={simAdr} setSimAdr={setSimAdrSync} saveSimToDB={saveSimToDB} elektraReady={elektraReady} elektraStatus={elektraStatus} elektraLastSync={elektraLastSync} elektraSyncing={elektraSyncing} onElektraSync={syncFromElektra} elektraWorkerUrl={getElektraWorkerUrl()} elektraMonthsCache={elektraMonthsCache} />}
           {tab === 'acente' && <Acente user={user} ac={ac} setAc={setAcSync} />}
           {tab === 'proj' && <Projeksiyon simOcc={simOcc} simAdr={simAdr} monthly={monthly} />}
           {tab === 'analiz' && <Analiz monthly={monthly} ac={ac} simOcc={simOcc} simAdr={simAdr} />}
