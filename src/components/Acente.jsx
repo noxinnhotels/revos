@@ -81,6 +81,8 @@ function Acente({user,ac,setAc}){
         ciro,
         ay: aylar,
         elektraId: ea.id,
+        pp: ea.avgPP || null,
+        adr: ea.avgADR || null,
       };
 
       newAc.push(item);
@@ -224,7 +226,7 @@ function Acente({user,ac,setAc}){
 
           {view==='liste'&&(
             <table className="tbl">
-              <thead><tr><th>Acente</th><th>Tip</th>{user.p.ciro&&<th>Ciro</th>}{user.p.hedef&&<th>Hedef</th>}<th>%</th>{user.p.kom&&<th>Kom</th>}<th>Durum</th>{user.p.addac&&<th></th>}</tr></thead>
+              <thead><tr><th>Acente</th><th>Tip</th>{user.p.ciro&&<th>Ciro</th>}{user.p.hedef&&<th>Hedef</th>}<th>%</th>{user.p.kom&&<th>Kom</th>}<th style={{color:'#a78bfa'}}>PP (€)</th><th>Durum</th>{user.p.addac&&<th></th>}</tr></thead>
               <tbody>
                 {list.map(a=>{const p=(a.ciro/a.hedef*100||0).toFixed(0);const d=p>=100?'iyi':p>=80?'geride':'kritik';return(
                   <tr key={a.id}>
@@ -237,6 +239,7 @@ function Acente({user,ac,setAc}){
                     {user.p.hedef&&<td style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>{fmtK(a.hedef)}</td>}
                     <td><div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:38,height:4,background:'rgba(255,255,255,0.04)',borderRadius:2}}><div style={{width:`${Math.min(p,100)}%`,height:'100%',background:p>=100?'var(--teal)':p>=80?'var(--gold)':'var(--rose)',borderRadius:2}}/></div><span style={{fontFamily:'var(--mono)',fontSize:10,color:p>=100?'var(--teal)':p>=80?'var(--gold)':'#ff6eb4'}}>%{p}</span></div></td>
                     {user.p.kom&&<td style={{fontFamily:'var(--mono)',fontSize:11}}>%{a.kom}</td>}
+                    <td style={{fontFamily:'var(--mono)',fontSize:11,color:'#a78bfa',fontWeight:600}}>{a.pp?`€${a.pp.toFixed(2)}`:'—'}</td>
                     <td><span className={`badge ${d==='iyi'?'bg2':d==='geride'?'by2':'br2'}`}>{d==='iyi'?'✓ İyi':d==='geride'?'⚡ Geride':'🚨 Kritik'}</span></td>
                     {user.p.addac&&<td><button onClick={()=>{setPendingDelete({id:a.id,name:a.ad});setDelId(a.id);}} style={{background:'none',border:'1px solid rgba(247,37,133,0.25)',borderRadius:6,color:'#ff6eb4',cursor:'pointer',padding:'3px 8px',fontSize:11}} onMouseOver={e=>e.target.style.background='var(--rose-dim)'} onMouseOut={e=>e.target.style.background='none'}>✕</button></td>}
                   </tr>
@@ -309,6 +312,7 @@ function Acente({user,ac,setAc}){
                   <th style={{padding:'8px 10px',textAlign:'center',color:'var(--teal)',fontWeight:500}}>Toplam Oda</th>
                   <th style={{padding:'8px 10px',textAlign:'center',color:'var(--gold)',fontWeight:500}}>Ciro (€)</th>
                   <th style={{padding:'8px 10px',textAlign:'center',color:'var(--blue)',fontWeight:500}}>Misafir</th>
+                  <th style={{padding:'8px 10px',textAlign:'center',color:'#a78bfa',fontWeight:500}}>Ort. PP (€)</th>
                   <th style={{padding:'8px 10px',textAlign:'center',color:'var(--text3)',fontWeight:500}}>Aylık Dağılım</th>
                 </tr>
               </thead>
@@ -325,6 +329,9 @@ function Acente({user,ac,setAc}){
                       {a.totalRevenue>0?`€${Math.round(a.totalRevenue).toLocaleString('tr-TR')}`:'—'}
                     </td>
                     <td style={{padding:'8px 10px',textAlign:'center',fontFamily:'var(--mono)',color:'var(--blue)'}}>{a.totalPax.toLocaleString('tr-TR')}</td>
+                    <td style={{padding:'8px 10px',textAlign:'center',fontFamily:'var(--mono)',color:'#a78bfa',fontWeight:600}}>
+                      {a.avgPP ? `€${a.avgPP.toFixed(2)}` : '—'}
+                    </td>
                     <td style={{padding:'8px 10px'}}>
                       <div style={{display:'flex',gap:2}}>
                         {a.months.map((v,i)=>(
