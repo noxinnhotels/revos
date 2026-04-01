@@ -507,10 +507,9 @@ function App() {
         setElektraSyncing(false);
         return;
       }
-      data = data.data;
-
+      // Worker { ok, endpoint, months } formatında dönüyor
       // Elektra verisini RevenueOS formatına çevir — gelmeyenler 0
-      const rows = data?.months || data?.data || data?.result || [];
+      const rows = data?.months || data?.data?.months || data?.result || [];
       if (rows.length > 0) {
         const mapped = MS.map((m, i) => {
           const row = rows.find(r => r.month === i + 1 || r.monthIndex === i);
