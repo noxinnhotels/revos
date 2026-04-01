@@ -16,6 +16,36 @@ function Dashboard({user,monthly,simOcc,setSimOcc,simAdr,setSimAdr,saveSimToDB,
   const [showSezon,setShowSezon]=useState(false);
   const effectiveAdr = simMode==='Oda Başı' ? simAdr : simPP*simPax;
 
+  // Elektra dönem seçici
+  const curYear = new Date().getFullYear();
+  const [elektraYear, setElektraYear] = useState(curYear);
+  const [elektraMonth, setElektraMonth] = useState(null); // null = yıllık görünüm
+  const [elektraDetail, setElektraDetail] = useState(null); // seçili ay detayı
+  const [elektraYearData, setElektraYearData] = useState({}); // {year: months[]}
+  const [elektraLoading, setElektraLoading] = useState(false);
+
+  const MFull = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+
+  const loadElektraYear = async (year) => {
+    const workerUrl = localStorage.getItem('rv_elektra_worker') || '';
+    const token = localStorage.getItem('rv_elektra_token') || '';
+    if (!workerUrl || !token) return;
+    if (elektraYearData[year]) { setElektraYear(year); return; }
+    setElektraLoading(true);
+    try {
+      const q = new URLSearchParams({ action: 'monthly_stats', token, year });
+      const res = await fetch(`${workerUrl}?${q}`);
+      const data = await res.json();
+      if (data.ok && data.months) {
+        setElektraYearData(prev => ({ ...prev, [year]: data.months }));
+      }
+    } catch(e) {}
+    setElektraLoading(false);
+    setElektraYear(year);
+  };
+
+  const elektraMonths = elektraYearData[elektraYear] || [];
+
   const sezonGun = React.useMemo(()=>{
     if(!sezonAcilis||!sezonKapanis) return 365;
     const a=new Date(sezonAcilis), k=new Date(sezonKapanis);
@@ -104,6 +134,194 @@ function Dashboard({user,monthly,simOcc,setSimOcc,simAdr,setSimAdr,saveSimToDB,
             onClick={onElektraSync} disabled={elektraSyncing}>
             {elektraSyncing ? '⏳ Senkronize…' : '🔄 Güncelle'}
           </button>
+        </div>
+      )}
+
+      {/* ── ELEKTRA VERİ PANELİ ── */}
+      {elektraReady && (
+        <div className="panel" style={{marginBottom:16}}>
+          <div className="ptitle" style={{marginBottom:12}}>
+            ⚡ Elektra PMS Verileri
+            {elektraLoading && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginLeft:8}}>yükleniyor…</span>}
+          </div>
+
+          {/* Yıl/Ay Seçici */}
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+            {/* Yıl seçici */}
+            <div style={{display:'flex',alignItems:'center',gap:4}}>
+              <button className="btn bg" style={{padding:'4px 10px',fontSize:12}}
+                onClick={()=>loadElektraYear(elektraYear-1)}>◀</button>
+              <div style={{fontSize:14,fontWeight:700,fontFamily:'var(--mono)',color:'var(--gold)',minWidth:50,textAlign:'center'}}>{elektraYear}</div>
+              <button className="btn bg" style={{padding:'4px 10px',fontSize:12}}
+                onClick={()=>loadElektraYear(elektraYear+1)} disabled={elektraYear>=curYear}>▶</button>
+            </div>
+
+            {/* Ay seçici */}
+            <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+              <button
+                className={`btn ${elektraMonth===null?'bp':'bg'}`}
+                style={{fontSize:10,padding:'3px 10px'}}
+                onClick={()=>{setElektraMonth(null);setElektraDetail(null);}}>
+                Yıllık
+              </button>
+              {MFull.map((m,i)=>{
+                const row = elektraMonths.find(r=>r.month===i+1);
+                const hasData = row && (row.occupancy>0||row.rooms>0);
+                return (
+                  <button key={i}
+                    className={`btn ${elektraMonth===i?'bp':'bg'}`}
+                    style={{fontSize:10,padding:'3px 8px',
+                      color: hasData ? 'var(--teal)' : 'var(--text3)',
+                      borderColor: hasData ? 'rgba(6,214,160,0.3)' : undefined}}
+                    onClick={()=>{
+                      setElektraMonth(i);
+                      setElektraDetail(row||null);
+                      if(!elektraYearData[elektraYear]) loadElektraYear(elektraYear);
+                    }}>
+                    {m.slice(0,3)}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button className="btn bg" style={{fontSize:10,padding:'3px 10px',marginLeft:'auto'}}
+              onClick={()=>loadElektraYear(elektraYear)}
+              disabled={elektraLoading}>
+              🔄 Yenile
+            </button>
+          </div>
+
+          {/* Yıllık Özet */}
+          {elektraMonth===null && (
+            <div>
+              {elektraMonths.length === 0 ? (
+                <div style={{textAlign:'center',padding:'24px',color:'var(--text3)',fontSize:12}}>
+                  {elektraLoading ? '⏳ Yükleniyor…' : 'Veri yok — Yenile butonuna basın'}
+                </div>
+              ) : (
+                <>
+                  {/* Özet KPI */}
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
+                    {[
+                      {l:'Sezon Ort. OCC', v: (() => { const d=elektraMonths.filter(m=>m.occupancy>0); return d.length?`%${Math.round(d.reduce((a,b)=>a+b.occupancy,0)/d.length)}`:'-'; })(), c:'var(--teal)', icon:'🏨'},
+                      {l:'Toplam Dolu Oda', v: (() => { const t=elektraMonths.reduce((a,b)=>a+b.rooms,0); return t?t.toLocaleString('tr-TR'):'-'; })(), c:'var(--blue)', icon:'🛏'},
+                      {l:'Ort. ADR', v: (() => { const d=elektraMonths.filter(m=>m.adr>0); return d.length?`€${Math.round(d.reduce((a,b)=>a+b.adr,0)/d.length)}`:'-'; })(), c:'var(--gold)', icon:'💰'},
+                      {l:'Kapasite', v: (() => { const c=elektraMonths.find(m=>m.capacity>0); return c?c.capacity+' oda':'-'; })(), c:'#a78bfa', icon:'🏗'},
+                    ].map((k,i)=>(
+                      <div key={i} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px'}}>
+                        <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:6}}>{k.icon} {k.l}</div>
+                        <div style={{fontSize:20,fontWeight:700,color:k.c,fontFamily:'var(--ff)'}}>{k.v}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Aylık OCC tablosu */}
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                      <thead>
+                        <tr style={{borderBottom:'1px solid var(--border)'}}>
+                          <th style={{textAlign:'left',padding:'6px 8px',color:'var(--text3)',fontWeight:500,fontSize:11}}>Ay</th>
+                          <th style={{textAlign:'center',padding:'6px 8px',color:'var(--teal)',fontWeight:600,fontSize:11}}>OCC %</th>
+                          <th style={{textAlign:'center',padding:'6px 8px',color:'var(--gold)',fontWeight:600,fontSize:11}}>ADR €</th>
+                          <th style={{textAlign:'center',padding:'6px 8px',color:'var(--blue)',fontWeight:600,fontSize:11}}>Dolu Oda</th>
+                          <th style={{textAlign:'center',padding:'6px 8px',color:'#a78bfa',fontWeight:600,fontSize:11}}>Kapasite</th>
+                          <th style={{textAlign:'left',padding:'6px 8px',color:'var(--text3)',fontWeight:500,fontSize:11}}>Doluluk</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {elektraMonths.map((row,i)=>{
+                          const occ = row.occupancy || 0;
+                          const hasData = occ > 0 || row.rooms > 0;
+                          return (
+                            <tr key={i}
+                              style={{borderBottom:'1px solid rgba(255,255,255,0.04)',cursor:'pointer',
+                                background: hasData ? 'rgba(6,214,160,0.03)' : 'transparent'}}
+                              onClick={()=>{setElektraMonth(i);setElektraDetail(row);}}>
+                              <td style={{padding:'8px 8px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)'}}>
+                                {MFull[row.month-1]}
+                              </td>
+                              <td style={{textAlign:'center',padding:'8px',fontFamily:'var(--mono)',
+                                fontWeight:700,color:occ>=80?'var(--teal)':occ>=50?'var(--gold)':occ>0?'var(--text2)':'var(--text3)'}}>
+                                {occ > 0 ? `%${occ.toFixed(0)}` : '—'}
+                              </td>
+                              <td style={{textAlign:'center',padding:'8px',fontFamily:'var(--mono)',color:row.adr>0?'var(--gold)':'var(--text3)'}}>
+                                {row.adr > 0 ? `€${row.adr}` : '—'}
+                              </td>
+                              <td style={{textAlign:'center',padding:'8px',fontFamily:'var(--mono)',color:'var(--blue)'}}>
+                                {row.rooms > 0 ? row.rooms : '—'}
+                              </td>
+                              <td style={{textAlign:'center',padding:'8px',fontFamily:'var(--mono)',color:'#a78bfa'}}>
+                                {row.capacity > 0 ? row.capacity : '—'}
+                              </td>
+                              <td style={{padding:'8px',minWidth:120}}>
+                                {occ > 0 ? (
+                                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                                    <div style={{flex:1,height:6,background:'rgba(255,255,255,0.08)',borderRadius:3}}>
+                                      <div style={{width:`${Math.min(occ,100)}%`,height:'100%',borderRadius:3,
+                                        background:occ>=80?'var(--teal)':occ>=50?'var(--gold)':'#ff6eb4'}}/>
+                                    </div>
+                                    <span style={{fontSize:10,fontFamily:'var(--mono)',color:'var(--text3)',minWidth:28}}>
+                                      {occ.toFixed(0)}%
+                                    </span>
+                                  </div>
+                                ) : <span style={{color:'var(--text3)',fontSize:11}}>—</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Aylık Detay */}
+          {elektraMonth !== null && (
+            <div>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+                <button className="btn bg" style={{fontSize:11,padding:'4px 10px'}}
+                  onClick={()=>{setElektraMonth(null);setElektraDetail(null);}}>
+                  ← Yıllık Görünüm
+                </button>
+                <span style={{fontWeight:700,fontSize:14,color:'var(--gold)'}}>
+                  {MFull[elektraMonth]} {elektraYear}
+                </span>
+              </div>
+
+              {elektraDetail ? (
+                <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10}}>
+                  {[
+                    {l:'Doluluk', v:elektraDetail.occupancy>0?`%${elektraDetail.occupancy.toFixed(1)}`:'—', c:'var(--teal)', icon:'🏨'},
+                    {l:'Ort. Oda Fiyatı (ADR)', v:elektraDetail.adr>0?`€${elektraDetail.adr}`:'—', c:'var(--gold)', icon:'💰'},
+                    {l:'Dolu Oda (Günlük Ort.)', v:elektraDetail.rooms>0?`${elektraDetail.rooms} oda`:'—', c:'var(--blue)', icon:'🛏'},
+                    {l:'Toplam Kapasite', v:elektraDetail.capacity>0?`${elektraDetail.capacity} oda`:'—', c:'#a78bfa', icon:'🏗'},
+                  ].map((k,i)=>(
+                    <div key={i} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 16px'}}>
+                      <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:8}}>{k.icon} {k.l}</div>
+                      <div style={{fontSize:26,fontWeight:700,color:k.c,fontFamily:'var(--ff)'}}>{k.v}</div>
+                    </div>
+                  ))}
+                  {elektraDetail.occupancy > 0 && (
+                    <div style={{gridColumn:'1/-1',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 16px'}}>
+                      <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:10}}>📊 RevPAR</div>
+                      <div style={{fontSize:22,fontWeight:700,color:'var(--gold)',fontFamily:'var(--ff)'}}>
+                        €{elektraDetail.adr > 0 ? Math.round(elektraDetail.adr * elektraDetail.occupancy / 100) : '—'}
+                      </div>
+                      <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+                        ADR €{elektraDetail.adr} × OCC %{elektraDetail.occupancy?.toFixed(0)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{textAlign:'center',padding:'24px',color:'var(--text3)',fontSize:12}}>
+                  Bu ay için Elektra verisi yok
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
