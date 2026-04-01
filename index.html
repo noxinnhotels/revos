@@ -2,12 +2,72 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RevenueOS — Satış & Bütçe Yönetimi</title>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>RevenueOS</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/revos/manifest.json" />
+  <meta name="theme-color" content="#f0b429" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="RevenueOS" />
+
+  <!-- iOS splash / ikon (emoji fallback) -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='80' fill='%23080c14'/><text x='50%25' y='55%25' text-anchor='middle' dominant-baseline='middle' font-size='300'>📊</text></svg>" />
+
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* Splash screen */
+    #splash {
+      position: fixed; inset: 0; z-index: 9999;
+      background: #080c14;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      transition: opacity .4s ease;
+    }
+    #splash.hide { opacity: 0; pointer-events: none; }
+    #splash .logo { font-size: 32px; font-weight: 800; font-family: 'Outfit', sans-serif; color: #f0f4ff; letter-spacing: -1px; }
+    #splash .logo em { color: #f0b429; font-style: normal; }
+    #splash .sub { font-size: 11px; color: #4a5a78; font-family: monospace; letter-spacing: .1em; }
+    #splash .dot { width: 6px; height: 6px; border-radius: 50%; background: #f0b429; animation: blink 1s ease infinite; }
+    @keyframes blink { 0%,100%{opacity:.2} 50%{opacity:1} }
+  </style>
 </head>
 <body>
+  <!-- Splash -->
+  <div id="splash">
+    <div class="logo">Revenue<em>OS</em></div>
+    <div class="sub">NOXINN DELUXE HOTEL</div>
+    <div class="dot"></div>
+  </div>
+
   <div id="root"></div>
+
   <script type="module" src="/src/main.jsx"></script>
+
+  <script>
+    // Service Worker kaydet
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/revos/sw.js')
+          .then(r => console.log('SW registered'))
+          .catch(e => console.log('SW error:', e));
+      });
+    }
+
+    // Splash gizle
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const splash = document.getElementById('splash');
+        if (splash) {
+          splash.classList.add('hide');
+          setTimeout(() => splash.remove(), 400);
+        }
+      }, 800);
+    });
+  </script>
 </body>
 </html>
