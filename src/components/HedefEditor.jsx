@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { fmt, fmtK } from '../utils/format';
 import { MS, MF } from '../data/constants';
+import { getSupabase } from '../utils/supabase';
 
 function HedefEditor({user,monthly,setMonthly,ac,setAc}){
   const [dm,setDm]=useState(monthly.map(m=>({...m})));
@@ -28,7 +29,45 @@ function HedefEditor({user,monthly,setMonthly,ac,setAc}){
   const upAK=(id,v)=>{setDa(da.map(a=>a.id===id?{...a,kom:+v}:a));mark();};
   const upAI=(id,v)=>{setDa(da.map(a=>a.id===id?{...a,ind:+v}:a));mark();};
   const upAL=(id,mi,v)=>{setDa(da.map(a=>{if(a.id!==id)return a;const ay=[...a.ay];ay[mi]=+v*1000;return{...a,ay};}));mark();};
-  const save=()=>{setMonthly(dm);setAc(da);setChg(false);setSaved(true);setTimeout(()=>setSaved(false),3000);};
+  const save=async()=>{
+    // State güncelle
+    setMonthly(dm);
+    setAc(da);
+    setChg(false);
+    setSaved(true);
+    setTimeout(()=>setSaved(false),3000);
+    // Supabase'e kaydet
+    const sb = getSupabase();
+    if (!sb) { console.warn('Supabase bağlı değil'); return; }
+    try {
+      // Aylık hedefleri kaydet
+      const monthRows = dm.map((m,i) => ({ month_index: i, target: m.h, occ: m.o||null, adr: m.a||null }));
+      const { error: mErr } = await sb.from('monthly_targets').upsert(monthRows, { onConflict: 'month_index' });
+      if (mErr) console.error('monthly_targets error:', mErr);
+
+      // Acente hedeflerini kaydet — id ile direkt güncelle
+      for (const a of da) {
+        const aId = typeof a.id === 'number' ? a.id : parseInt(a.id);
+        if (!aId || isNaN(aId)) {
+          console.warn('Geçersiz acente id:', a.id, a.ad);
+          continue;
+        }
+        const { error: aErr } = await sb.from('agencies').update({
+          annual_target: a.hedef,
+          commission: a.kom,
+          discount: a.ind || 0,
+        }).eq('id', aId);
+        if (aErr) console.error('agencies update error:', aErr, a.ad);
+
+        // Aylık hedefleri güncelle
+        const ayRows = a.ay.map((t,i) => ({ agency_id: aId, month_index: i, target: t || 0 }));
+        const { error: ayErr } = await sb.from('agency_monthly')
+          .upsert(ayRows, { onConflict: 'agency_id,month_index' });
+        if (ayErr) console.error('agency_monthly error:', ayErr, a.ad);
+      }
+      console.log('✅ HedefEditor kayıt tamamlandı');
+    } catch(e) { console.error('HedefEditor save error:', e); }
+  };
   const reset=()=>{setDm(monthly.map(m=>({...m})));setDa(ac.map(a=>({...a,ay:[...a.ay]})));setChg(false);};
   const dist=()=>{
     const tot=+dT*1e6;if(!tot)return;
